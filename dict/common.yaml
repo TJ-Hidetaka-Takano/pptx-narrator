@@ -1,0 +1,20 @@
+words:
+  - surface: GitHub
+    pronunciation: ギットハブ
+    replace: ギットハブ
+
+  - surface: Docker
+    pronunciation: ドッカー
+    replace: ドッカー
+
+  - surface: Linux
+    pronunciation: リナックス
+    replace: リナックス
+
+  - surface: API
+    pronunciation: エーピーアイ
+    replace: エーピーアイ
+
+  - surface: AI
+    pronunciation: エーアイ
+    replace: エーアイ

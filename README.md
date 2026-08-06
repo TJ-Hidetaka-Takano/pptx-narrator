@@ -12,10 +12,18 @@ pptx-narrator/
 |   `-- Models/
 |       `-- *.aivmx
 |-- compose.yaml
+|-- dict/
+|   |-- common.yaml
+|   |-- autosar.yaml
+|   |-- linux.yaml
+|   |-- network.yaml
+|   |-- company.yaml
+|   `-- README.md
 |-- docker/
 |   |-- Dockerfile
 |   |-- app/
 |   |   |-- generate_audio.py
+|   |   |-- generate_dict.py
 |   |   `-- requirements.txt
 |   `-- entrypoint
 |-- GNUmakefile
@@ -96,6 +104,7 @@ make shutdown
 ```bash
 make voices                         # 利用可能な話者・style_idを表示
 make extract PPTX="sample/introduction_to_autosar.pptx" # 発表者ノートだけを抽出
+make dict                           # YAML読み辞書をJSONへ変換
 make logs                           # Engineログを追跡
 make ps                             # コンテナ状態を表示
 make restart                        # モデル追加後などにEngineを再起動
@@ -268,6 +277,34 @@ make tts PPTX="sample/introduction_to_autosar.pptx" \
   STYLE_ID=888753760 TTS_ARGS="--no-combine"
 ```
 
+### 8.7 読み辞書
+
+`dict/*.yaml`で、技術用語や社内用語の読みを管理します。`make dict` はYAMLを
+AivisSpeech互換JSONへ変換し、Engineのユーザー辞書APIへ反映します。`make tts` は
+この処理を事前に自動実行するため、原文の発表者ノートをそのままEngineへ渡しても
+ユーザー辞書が適用されます。
+
+```yaml
+words:
+  - surface: AUTOSAR
+    pronunciation: オートザー
+    replace: オートザー
+    accent: 4
+    priority: 8
+    word_type: ORGANIZATION_NAME
+```
+
+`accent`、`priority`、`word_type` はAivisSpeech向けの拡張項目です。`surface` が
+重複すると、どのYAMLにあるかを表示して処理を停止します。辞書を単独で更新するには
+次を実行します。
+
+```bash
+make dict
+```
+
+生成物の `dict/aivis-user_dict.json` はGit管理しません。辞書の詳細は
+[dict/README.md](dict/README.md) を参照してください。
+
 ## 9. 主なオプション
 
 ```text
@@ -300,12 +337,13 @@ make help
 2. 発表者ノートが既に存在するスライドだけを対象にする。
 3. 空白行と行末空白を正規化する。
 4. ノートを`output/notes`へ保存する。
-5. `/audio_query`で読み上げクエリを作成する。
-6. 話速、音高、抑揚、音量、前後無音を上書きする。
-7. `/synthesis`でWAVを生成する。
-8. 必要に応じてFFmpegでMP3へ変換する。
-9. スライド間に無音を挿入し、一本の音声へ結合する。
-10. 使用した話者と生成ファイルを`manifest.json`へ記録する。
+5. `generate_dict.py`で`dict/*.yaml`をAivisSpeech互換JSONへ変換し、ユーザー辞書APIへ反映する。
+6. `/audio_query`で読み上げクエリを作成する。
+7. 話速、音高、抑揚、音量、前後無音を上書きする。
+8. `/synthesis`でWAVを生成する。
+9. 必要に応じてFFmpegでMP3へ変換する。
+10. スライド間に無音を挿入し、一本の音声へ結合する。
+11. 使用した話者と生成ファイルを`manifest.json`へ記録する。
 
 ## 11. 運用上の注意
 
@@ -388,5 +426,5 @@ make shutdown
 - 発表者ノートを単純なテキストとして読みます。
 - PowerPointのスライド表示時間とは同期しません。
 - 音声モデル自体は同梱しません。
-- 読み間違いは、ユーザー辞書または原稿表記の調整が必要です。
+- 読み間違いは、`dict/*.yaml`の読み辞書または原稿表記で調整します。
 - `cpu-latest`を使うため、将来のEngine更新でAPI差分が発生する可能性があります。

@@ -1,0 +1,24 @@
+words:
+  - surface: Ubuntu
+    pronunciation: ウブントゥ
+    replace: ウブントゥ
+
+  - surface: systemd
+    pronunciation: システムディー
+    replace: システムディー
+
+  - surface: bash
+    pronunciation: バッシュ
+    replace: バッシュ
+
+  - surface: GCC
+    pronunciation: ジーシーシー
+    replace: ジーシーシー
+
+  - surface: Clang
+    pronunciation: クラン
+    replace: クラン
+
+  - surface: glibc
+    pronunciation: ジーリブシー
+    replace: ジーリブシー

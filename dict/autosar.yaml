@@ -1,0 +1,45 @@
+words:
+  - surface: AUTOSAR AP
+    pronunciation: オートザー エーピー
+    replace: オートザー エーピー
+    priority: 8
+    word_type: ORGANIZATION_NAME
+    aivis_pronunciations:
+      - オートザー
+      - エーピー
+    aivis_accents: [0, 0]
+
+  - surface: Adaptive Platform
+    pronunciation: アダプティブプラットフォーム
+    replace: アダプティブプラットフォーム
+
+  - surface: Functional Cluster
+    pronunciation: ファンクショナルクラスター
+    replace: ファンクショナルクラスター
+
+  - surface: Execution Management
+    pronunciation: エグゼキューションマネジメント
+    replace: エグゼキューションマネジメント
+
+  - surface: AUTOSAR
+    pronunciation: オートザー
+    replace: オートザー
+    accent: 4
+    priority: 8
+    word_type: ORGANIZATION_NAME
+
+  - surface: Adaptive
+    pronunciation: アダプティブ
+    replace: アダプティブ
+
+  - surface: Classic
+    pronunciation: クラシック
+    replace: クラシック
+
+  - surface: SOME/IP
+    pronunciation: サムアイピー
+    replace: サムアイピー
+
+  - surface: ARA
+    pronunciation: エーアールエー
+    replace: エーアールエー

@@ -5,6 +5,10 @@ PPTX_FILE	:= $(notdir $(PPTX))
 PPTX_NAME	:= $(basename $(PPTX_FILE))
 STYLE_ID	?=
 TTS_ARGS	?=
+DICT_DIR	:= dict
+DICT_YAMLS	:= $(sort $(wildcard $(DICT_DIR)/*.yaml $(DICT_DIR)/*.yml))
+DICT_GENERATOR	:= docker/app/generate_dict.py
+AIVIS_USER_DICT	:= $(DICT_DIR)/aivis-user_dict.json
 
 .PHONY: help
 .DEFAULT_GOAL = help
@@ -42,7 +46,7 @@ restart: $(DEPS)
 #--------------------------------------------------------------------------------------------------
 # ナレーション音声の生成
 #--------------------------------------------------------------------------------------------------
-.PHONY: tts extract voices check-pptx
+.PHONY: tts extract voices dict check-pptx
 # PPTX指定の検証（pptx-narrator配下のファイルのみ受け付ける）
 check-pptx:
 	@test -n "$(PPTX)" || { echo '[ERROR] PPTXを指定してください。例: make tts PPTX=/path/to/slides.pptx' >&2; exit 2; }
@@ -55,7 +59,7 @@ check-pptx:
 	esac
 
 # PPTXの発表者ノートから結合音声を生成
-tts: $(DEPS) check-pptx launch
+tts: $(DEPS) check-pptx dict
 	@mkdir -p "output/$(PPTX_NAME)"
 	@echo "[make] tts: output/$(PPTX_NAME)/narration.mp3 を生成します"
 	$(COMPOSE) --profile tools run --rm pptx-narrator \
@@ -75,6 +79,20 @@ extract: $(DEPS) check-pptx
 voices: $(DEPS) launch
 	@echo '[make] voices: 利用可能な話者・style_idを表示します'
 	$(COMPOSE) --profile tools run --rm pptx-narrator --list-voices
+
+# YAML読み辞書からAivisSpeech互換JSONを生成し、Engineへ反映する。
+# dictディレクトリを依存先に含めることで、YAMLファイルの追加・削除も検出する。
+$(AIVIS_USER_DICT): $(DICT_DIR)/ $(DICT_YAMLS) $(DICT_GENERATOR)
+	@echo '[make] dict: YAMLからAivisSpeechユーザー辞書を生成・更新します'
+	$(COMPOSE) --profile tools run --rm --entrypoint python pptx-narrator \
+		/opt/narrator/generate_dict.py --dict-dir $(DICT_DIR) \
+		--output $@ --apply
+
+# Engine再起動後も確実に辞書を反映する。JSON生成は上記依存関係に従って必要時だけ行う。
+dict: $(DEPS) launch $(AIVIS_USER_DICT)
+	@echo '[make] dict: AivisSpeech Engineのユーザー辞書を更新します'
+	$(COMPOSE) --profile tools run --rm --entrypoint python pptx-narrator \
+		/opt/narrator/generate_dict.py --output $(AIVIS_USER_DICT) --apply-existing
 
 #--------------------------------------------------------------------------------------------------
 # その他ユーティリティ
@@ -106,6 +124,7 @@ help:
 	  'その他のコマンド:' \
 	  '  make voices                                    # 利用可能な話者・style_idを表示する' \
 	  '  make extract PPTX=sample/introduction_to_autosar.pptx # 発表者ノートだけを抽出する' \
+	  '  make dict                                      # YAML読み辞書をJSONへ変換する' \
 	  '  make restart                                   # AivisSpeech Engineを再起動する' \
 	  '  make logs                                      # AivisSpeech Engineのログを追跡する' \
 	  '  make ps                                        # コンテナの状態を表示する' \

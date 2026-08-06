@@ -1,0 +1,28 @@
+words:
+  - surface: Ethernet
+    pronunciation: イーサネット
+    replace: イーサネット
+
+  - surface: VLAN
+    pronunciation: ブイラン
+    replace: ブイラン
+
+  - surface: UDP
+    pronunciation: ユーディーピー
+    replace: ユーディーピー
+
+  - surface: TCP
+    pronunciation: ティーシーピー
+    replace: ティーシーピー
+
+  - surface: DoIP
+    pronunciation: ドゥアイピー
+    replace: ドゥアイピー
+
+  - surface: UDS
+    pronunciation: ユーディーエス
+    replace: ユーディーエス
+
+  - surface: ECU
+    pronunciation: イーシーユー
+    replace: イーシーユー
