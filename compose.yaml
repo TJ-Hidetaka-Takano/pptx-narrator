@@ -1,0 +1,22 @@
+services:
+  aivis-engine:
+    image: ghcr.io/aivis-project/aivisspeech-engine:cpu-latest
+    ports:
+      - "127.0.0.1:10101:10101"
+    volumes:
+      - ./aivis-data:/home/user/.local/share/AivisSpeech-Engine-Dev
+    restart: unless-stopped
+
+  narrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - aivis-engine
+    environment:
+      AIVIS_ENGINE_URL: http://aivis-engine:10101
+    volumes:
+      - ./input:/work/input:ro
+      - ./output:/work/output
+    profiles:
+      - tools
