@@ -18,6 +18,7 @@ pptx-narrator/
 |   |-- linux.yaml
 |   |-- network.yaml
 |   |-- company.yaml
+|   |-- aivis-user-dict.json  # 自動生成、Git管理外
 |   `-- README.md
 |-- docker/
 |   |-- Dockerfile
@@ -35,8 +36,6 @@ pptx-narrator/
 |       |-- narration.mp3
 |       |-- notes/
 |       `-- slides/
-|-- compose.yaml
-|-- GNUmakefile
 `-- README.md
 
 ```
@@ -62,7 +61,7 @@ Dockerfileでは仮想環境を作らず、`pip --break-system-packages`で
 ソフトウェア本体と学習済み音声モデルのライセンスは別です。
 
 - AivisSpeech EngineはLGPL-3.0です。
-- `python-pptx`、`requests`、FFmpegなどにも個別のライセンスがあります。
+- `python-pptx`、`requests`、PyYAML、FFmpegなどにも個別のライセンスがあります。
 - `.aivmx`音声モデルはモデルごとにライセンス、利用条件、クレジット表記条件が異なります。
 - 社内利用であっても、使用するモデルの規約を確認してください。
 - このリポジトリには音声モデルを同梱しません。
@@ -104,7 +103,7 @@ make shutdown
 ```bash
 make voices                         # 利用可能な話者・style_idを表示
 make extract PPTX="sample/introduction_to_autosar.pptx" # 発表者ノートだけを抽出
-make dict                           # YAML読み辞書をJSONへ変換
+make dict                           # 読み辞書を生成し、Engineへ反映
 make logs                           # Engineログを追跡
 make ps                             # コンテナ状態を表示
 make restart                        # モデル追加後などにEngineを再起動
@@ -305,6 +304,9 @@ make dict
 生成物の `dict/aivis-user_dict.json` はGit管理しません。辞書の詳細は
 [dict/README.md](dict/README.md) を参照してください。
 
+MakeはYAMLと変換スクリプトの更新を検知し、必要に応じてDockerイメージとJSONを
+再生成します。YAMLに変更がない場合も、生成済みJSONをEngineへ再反映します。
+
 ## 9. 主なオプション
 
 ```text
@@ -333,12 +335,12 @@ make help
 
 ## 10. 処理仕様
 
-1. PPTXを読み込む。
-2. 発表者ノートが既に存在するスライドだけを対象にする。
-3. 空白行と行末空白を正規化する。
-4. ノートを`output/notes`へ保存する。
-5. `generate_dict.py`で`dict/*.yaml`をAivisSpeech互換JSONへ変換し、ユーザー辞書APIへ反映する。
-6. `/audio_query`で読み上げクエリを作成する。
+1. `make tts`が読み辞書を生成し、AivisSpeech Engineへ反映する。
+2. PPTXを読み込む。
+3. 発表者ノートが既に存在するスライドだけを対象にする。
+4. 空白行と行末空白を正規化する。
+5. ノートを`output/<PPTX名>/notes`へ保存する。
+6. `/audio_query`で読み上げクエリを作成する。このときEngineのユーザー辞書が適用される。
 7. 話速、音高、抑揚、音量、前後無音を上書きする。
 8. `/synthesis`でWAVを生成する。
 9. 必要に応じてFFmpegでMP3へ変換する。

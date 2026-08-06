@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""YAMLで管理する読み辞書を、TTS前処理用のJSONへ変換する。"""
+"""YAMLで管理する読み辞書をAivisSpeech Engineへ反映する。"""
 
 from __future__ import annotations
 
 import argparse
 import json
 import os
+import re
 import sys
 import uuid
 from pathlib import Path
@@ -15,9 +16,29 @@ import requests
 import yaml
 
 
+WORD_TYPE_PROPERTIES: dict[str, tuple[str, str, str, str, int]] = {
+    "PROPER_NOUN": ("名詞", "固有名詞", "一般", "*", 1348),
+    "LOCATION_NAME": ("名詞", "固有名詞", "地域", "一般", 1353),
+    "ORGANIZATION_NAME": ("名詞", "固有名詞", "組織", "*", 1352),
+    "PERSON_NAME": ("名詞", "固有名詞", "人名", "一般", 1349),
+    "PERSON_FAMILY_NAME": ("名詞", "固有名詞", "人名", "姓", 1350),
+    "PERSON_GIVEN_NAME": ("名詞", "固有名詞", "人名", "名", 1351),
+    "COMMON_NOUN": ("名詞", "一般", "*", "*", 1345),
+    "VERB": ("動詞", "自立", "*", "*", 642),
+    "ADJECTIVE": ("形容詞", "自立", "*", "*", 20),
+    "SUFFIX": ("名詞", "接尾", "一般", "*", 1358),
+}
+
+MORA_PATTERN = re.compile(
+    r"[イ]ェ|[ヴ][ャュョ]|[クグトド]ゥ|[テデ][ィャュョ]|[デ]ェ|[クグ]ヮ|"
+    r"[キシチニヒミリギジヂビピ][ェャュョ]|[シ]ィ|"
+    r"[クツフヴグ]ァ|[ウクスツフヴグズ]ィ|[ウクツフヴグ][ェォ]|[フ]ュ|[ァ-ヴー]"
+)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="dict/*.yaml を読み、読み置換用JSON辞書を生成します。"
+        description="dict/*.yamlからAivisSpeech互換ユーザー辞書を生成します。"
     )
     parser.add_argument(
         "--dict-dir", type=Path, default=Path("dict"), help="YAML辞書のディレクトリ"
@@ -70,26 +91,37 @@ def validate_word(word: Any, source: Path, index: int) -> dict[str, Any]:
             range_text = f"{minimum}～{maximum}" if maximum is not None else f"{minimum}以上"
             raise ValueError(f"{source}:{index}: {field} は {range_text} の整数にしてください")
     word_type = word.get("word_type", "PROPER_NOUN")
-    allowed_word_types = {
-        "PROPER_NOUN", "LOCATION_NAME", "ORGANIZATION_NAME", "PERSON_NAME",
-        "PERSON_FAMILY_NAME", "PERSON_GIVEN_NAME", "COMMON_NOUN", "VERB",
-        "ADJECTIVE", "SUFFIX",
-    }
-    if word_type not in allowed_word_types:
+    if word_type not in WORD_TYPE_PROPERTIES:
         raise ValueError(f"{source}:{index}: word_type が不正です: {word_type!r}")
     aivis_pronunciations = word.get("aivis_pronunciations", [pronunciation])
     aivis_accents = word.get("aivis_accents", [word.get("accent", 0)])
     if not isinstance(aivis_pronunciations, list) or not aivis_pronunciations or not all(
-        isinstance(value, str) and value.strip() for value in aivis_pronunciations
+        isinstance(value, str) and re.fullmatch(r"[ァ-ヴー]+", value)
+        for value in aivis_pronunciations
     ):
-        raise ValueError(f"{source}:{index}: aivis_pronunciations は空でない文字列のリストにしてください")
-    if not isinstance(aivis_accents, list) or len(aivis_accents) != len(aivis_pronunciations) or not all(
-        isinstance(value, int) and not isinstance(value, bool) and value >= 0
-        for value in aivis_accents
+        raise ValueError(
+            f"{source}:{index}: aivis_pronunciations はカタカナの読みのリストにしてください"
+        )
+    if (
+        not isinstance(aivis_accents, list)
+        or len(aivis_accents) != len(aivis_pronunciations)
+        or not all(
+            isinstance(value, int) and not isinstance(value, bool) and value >= 0
+            for value in aivis_accents
+        )
     ):
         raise ValueError(
             f"{source}:{index}: aivis_accents は読みと同数の0以上の整数リストにしてください"
         )
+    for pronunciation_part, accent in zip(
+        aivis_pronunciations, aivis_accents, strict=True
+    ):
+        mora_count = len(MORA_PATTERN.findall(pronunciation_part))
+        if accent > mora_count:
+            raise ValueError(
+                f"{source}:{index}: アクセント {accent} は読み {pronunciation_part!r} "
+                f"のモーラ数 {mora_count} 以下にしてください"
+            )
     return word
 
 
@@ -98,14 +130,23 @@ def make_aivis_word(word: dict[str, Any]) -> dict[str, Any]:
     surface = word["surface"]
     pronunciations = word.get("aivis_pronunciations", [word["pronunciation"]])
     accents = word.get("aivis_accents", [word.get("accent", 0)])
+    word_type = word.get("word_type", "PROPER_NOUN")
+    (
+        part_of_speech,
+        part_of_speech_detail_1,
+        part_of_speech_detail_2,
+        part_of_speech_detail_3,
+        context_id,
+    ) = WORD_TYPE_PROPERTIES[word_type]
     return {
         "surface": surface,
         "priority": word.get("priority", 5),
-        "part_of_speech": "名詞",
-        "part_of_speech_detail_1": "固有名詞",
-        "part_of_speech_detail_2": "一般",
-        "part_of_speech_detail_3": "*",
-        "word_type": word.get("word_type", "PROPER_NOUN"),
+        "context_id": context_id,
+        "part_of_speech": part_of_speech,
+        "part_of_speech_detail_1": part_of_speech_detail_1,
+        "part_of_speech_detail_2": part_of_speech_detail_2,
+        "part_of_speech_detail_3": part_of_speech_detail_3,
+        "word_type": word_type,
         "inflectional_type": "*",
         "inflectional_form": "*",
         "stem": [surface],
@@ -181,26 +222,29 @@ def apply_dictionary(
         response = requests.delete(
             f"{engine_url.rstrip('/')}/user_dict_word/{word_uuid}", timeout=30
         )
+        if response.status_code == 404:
+            continue
         response.raise_for_status()
 
 
 def main() -> int:
     args = parse_args()
     if args.apply_existing:
-        dictionary = read_previous_dictionary(args.output)
-        if not dictionary:
+        if not args.output.is_file():
             raise ValueError(f"生成済みのユーザー辞書がありません: {args.output}")
+        dictionary = read_previous_dictionary(args.output)
         apply_dictionary(dictionary, {}, args.engine_url)
         print(f"AivisSpeech Engineへユーザー辞書を反映しました: {args.engine_url}")
         return 0
 
     dictionary = load_dictionary(args.dict_dir)
     previous_dictionary = read_previous_dictionary(args.output)
-    write_dictionary(dictionary, args.output)
-    print(f"読み辞書を生成しました: {args.output} ({len(dictionary)} 語)")
     if args.apply:
         apply_dictionary(dictionary, previous_dictionary, args.engine_url)
         print(f"AivisSpeech Engineへユーザー辞書を反映しました: {args.engine_url}")
+    # API反映後に保存することで、失敗時も次回の削除差分を失わない。
+    write_dictionary(dictionary, args.output)
+    print(f"読み辞書を生成しました: {args.output} ({len(dictionary)} 語)")
     return 0
 
 

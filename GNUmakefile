@@ -9,6 +9,9 @@ DICT_DIR	:= dict
 DICT_YAMLS	:= $(sort $(wildcard $(DICT_DIR)/*.yaml $(DICT_DIR)/*.yml))
 DICT_GENERATOR	:= docker/app/generate_dict.py
 AIVIS_USER_DICT	:= $(DICT_DIR)/aivis-user_dict.json
+NARRATOR_IMAGE_STAMP := .home/pptx-narrator-image.stamp
+NARRATOR_IMAGE_SOURCES := compose.yaml docker/Dockerfile docker/entrypoint \
+	docker/app/requirements.txt $(wildcard docker/app/*.py)
 
 .PHONY: help
 .DEFAULT_GOAL = help
@@ -22,6 +25,14 @@ setup: $(DEPS)
 	@mkdir -p .home output aivis-data/Models
 	@echo '[make] setup: build docker images for pptx-narrator'
 	$(COMPOSE) build --no-cache pptx-narrator
+	@touch $(NARRATOR_IMAGE_STAMP)
+
+# アプリケーション変更時だけDockerイメージを更新する
+$(NARRATOR_IMAGE_STAMP): $(NARRATOR_IMAGE_SOURCES)
+	@mkdir -p .home
+	@echo '[make] build: pptx-narratorイメージを更新します'
+	$(COMPOSE) build pptx-narrator
+	@touch $@
 
 #--------------------------------------------------------------------------------------------------
 # AivisSpeech Engine サービスの起動・停止
@@ -82,14 +93,14 @@ voices: $(DEPS) launch
 
 # YAML読み辞書からAivisSpeech互換JSONを生成し、Engineへ反映する。
 # dictディレクトリを依存先に含めることで、YAMLファイルの追加・削除も検出する。
-$(AIVIS_USER_DICT): $(DICT_DIR)/ $(DICT_YAMLS) $(DICT_GENERATOR)
+$(AIVIS_USER_DICT): $(DICT_DIR)/ $(DICT_YAMLS) $(DICT_GENERATOR) $(NARRATOR_IMAGE_STAMP)
 	@echo '[make] dict: YAMLからAivisSpeechユーザー辞書を生成・更新します'
 	$(COMPOSE) --profile tools run --rm --entrypoint python pptx-narrator \
 		/opt/narrator/generate_dict.py --dict-dir $(DICT_DIR) \
 		--output $@ --apply
 
 # Engine再起動後も確実に辞書を反映する。JSON生成は上記依存関係に従って必要時だけ行う。
-dict: $(DEPS) launch $(AIVIS_USER_DICT)
+dict: $(DEPS) $(NARRATOR_IMAGE_STAMP) launch $(AIVIS_USER_DICT)
 	@echo '[make] dict: AivisSpeech Engineのユーザー辞書を更新します'
 	$(COMPOSE) --profile tools run --rm --entrypoint python pptx-narrator \
 		/opt/narrator/generate_dict.py --output $(AIVIS_USER_DICT) --apply-existing
@@ -124,7 +135,7 @@ help:
 	  'その他のコマンド:' \
 	  '  make voices                                    # 利用可能な話者・style_idを表示する' \
 	  '  make extract PPTX=sample/introduction_to_autosar.pptx # 発表者ノートだけを抽出する' \
-	  '  make dict                                      # YAML読み辞書をJSONへ変換する' \
+	  '  make dict                                      # 読み辞書を生成し、Engineへ反映する' \
 	  '  make restart                                   # AivisSpeech Engineを再起動する' \
 	  '  make logs                                      # AivisSpeech Engineのログを追跡する' \
 	  '  make ps                                        # コンテナの状態を表示する' \
