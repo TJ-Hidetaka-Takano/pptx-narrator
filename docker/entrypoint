@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+
+# Load the image's standard environment before running as the host UID/GID.
+if [ -r /etc/profile ]; then
+    . /etc/profile
+fi
+
+exec python /opt/narrator/generate_audio.py "$@"

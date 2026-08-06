@@ -1,0 +1,7 @@
+.git
+.DS_Store
+.env
+.home
+aivis-data
+output
+sample

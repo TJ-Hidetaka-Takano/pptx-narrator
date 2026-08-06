@@ -7,16 +7,37 @@ services:
       - ./aivis-data:/home/user/.local/share/AivisSpeech-Engine-Dev
     restart: unless-stopped
 
-  narrator:
+  pptx-narrator:
+    user: ${UID}:${GID}
+    image: pptx-narrator:latest
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: ./docker/Dockerfile
     depends_on:
       - aivis-engine
     environment:
       AIVIS_ENGINE_URL: http://aivis-engine:10101
+      HOME: ${PWD}/.home
     volumes:
-      - ./input:/work/input:ro
-      - ./output:/work/output
+      - type: bind
+        source: /etc/passwd
+        target: /etc/passwd
+        read_only: true
+      - type: bind
+        source: /etc/group
+        target: /etc/group
+        read_only: true
+      - type: bind
+        source: /etc/shadow
+        target: /etc/shadow
+        read_only: true
+      - type: bind
+        source: ${PWD}
+        target: ${PWD}
+    hostname: pptx-narrator
+    working_dir: ${PWD}
+    init: true
+    tty: true
+    stdin_open: true
     profiles:
       - tools

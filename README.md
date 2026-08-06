@@ -1,39 +1,51 @@
 # PPTX Narrator
 
 PowerPoint（`.pptx`）の**発表者ノート**を抽出し、ローカルの
-AivisSpeech Engineでスライド単位の音声と結合音声を生成します。
-
-OpenAI APIなどの外部TTSサービスは使用しません。
+AivisSpeech Engineでスライド単位の音声と結合音声を生成します。  
+(OpenAI APIなどの外部TTSサービスは使用しません。)
 
 ## 1. 構成
 
 ```text
-.
-├── Dockerfile
-├── compose.yaml
-├── requirements.txt
-├── app/
-│   └── generate_audio.py
-├── input/
-│   └── *.pptx
-├── output/
-│   ├── notes/
-│   ├── slides/
-│   ├── manifest.json
-│   └── lecture.mp3
-└── aivis-data/
-    └── Models/
-        └── *.aivmx
+pptx-narrator/
+|-- aivis-data/
+|   `-- Models/
+|       `-- *.aivmx
+|-- compose.yaml
+|-- docker/
+|   |-- Dockerfile
+|   |-- app/
+|   |   |-- generate_audio.py
+|   |   `-- requirements.txt
+|   `-- entrypoint
+|-- GNUmakefile
+|-- sample/
+|   `-- introduction_to_autosar.pptx
+|-- output/
+|   `-- introduction_to_autosar/
+|       |-- manifest.json
+|       |-- narration.mp3
+|       |-- notes/
+|       `-- slides/
+|-- compose.yaml
+|-- GNUmakefile
+`-- README.md
+
 ```
+
+`make setup`は`.env`へ現在のUID/GIDを記録し、`pptx-narrator`コンテナを同じ
+UID/GIDで実行します。`pptx-narrator`コンテナのHOMEは、ホストで管理する`.home/`
+です。これにより、生成物とコンテナ内HOMEのファイルがホストユーザー所有に
+なります。`aivis-engine`は公式イメージの既定ユーザーで実行します。
 
 Composeには次の2サービスがあります。
 
 | サービス | 役割 |
 |---|---|
 | `aivis-engine` | AivisSpeech EngineのHTTP API。CPU版公式イメージを使用 |
-| `narrator` | PPTXノート抽出、API呼び出し、FFmpegによる変換・結合 |
+| `pptx-narrator` | PPTXノート抽出、API呼び出し、FFmpegによる変換・結合 |
 
-PythonとPythonパッケージは`narrator`コンテナ内だけに導入します。
+PythonとPythonパッケージは`pptx-narrator`コンテナ内だけに導入します。
 Dockerfileでは仮想環境を作らず、`pip --break-system-packages`で
 コンテナのシステムPythonへ直接導入します。
 
@@ -64,23 +76,57 @@ NVIDIA GPU版へ変更する場合は、ホスト側にNVIDIA Container Toolkit�
 
 ## 4. 初期準備
 
-### 4.1 ディレクトリを作成する
+### 4.1 Makeコマンドの概要
+
+以降のDocker Compose操作は、リポジトリ直下で`make`から実行できます。
+
+```bash
+make setup
+make launch
+make tts PPTX="sample/introduction_to_autosar.pptx"
+make shutdown
+```
+
+入力PPTXはこのリポジトリ配下に置きます。`make tts`は指定したPPTXを直接処理し、
+結合音声を`output/<PPTXファイル名（拡張子なし）>/narration.mp3`へ生成します。
+例えば上記の入力なら`output/introduction_to_autosar/narration.mp3`です。
+
+追加で用意しているコマンド:
+
+```bash
+make voices                         # 利用可能な話者・style_idを表示
+make extract PPTX="sample/introduction_to_autosar.pptx" # 発表者ノートだけを抽出
+make logs                           # Engineログを追跡
+make ps                             # コンテナ状態を表示
+make restart                        # モデル追加後などにEngineを再起動
+```
+
+`STYLE_ID`と、アプリケーションの追加オプションは次のように指定できます。
+
+```bash
+make tts PPTX="sample/introduction_to_autosar.pptx" STYLE_ID=888753760 \
+  TTS_ARGS="--speed 0.95 --intonation 1.05 --slide-gap 1.0"
+```
+
+全コマンドは`make help`で確認できます。
+
+### 4.2 ディレクトリを作成する
 
 リポジトリのルートで実行します。
 
 ```bash
-mkdir -p input output aivis-data/Models
+mkdir -p output aivis-data/Models
 ```
 
-AivisSpeech Engine公式イメージは一般ユーザーで動作します。
-書き込み権限でエラーになる場合は、ホスト側ディレクトリの所有者を
-コンテナの実行UIDに合わせます。一般的なUID 1000の場合は次のとおりです。
+`aivis-engine`は公式イメージの既定一般ユーザー（通常UID 1000）で実行されます。
+書き込み権限でエラーになる場合は、Engine用のデータディレクトリだけをそのUIDに
+合わせます。
 
 ```bash
 sudo chown -R 1000:1000 aivis-data
 ```
 
-### 4.2 音声モデルを配置する
+### 4.3 音声モデルを配置する
 
 ライセンスを確認したAivisSpeech形式のモデルファイル（`.aivmx`）を配置します。
 
@@ -90,17 +136,20 @@ aivis-data/Models/<model-name>.aivmx
 
 モデルのライセンス文書も、別途社内で追跡できる場所へ保管してください。
 
-### 4.3 PPTXを配置する
+### 4.4 サンプルPPTX
+
+リポジトリには、発表者ノートを含むAUTOSAR入門のサンプルを同梱しています。
+処理対象のPPTXは、このリポジトリ配下に配置して`PPTX`へ相対パスを指定します。
 
 ```bash
-cp "/path/to/TechConnect講義資料_AUTSARAP開発_v0.2.pptx" input/
+make tts PPTX="sample/introduction_to_autosar.pptx"
 ```
 
 ## 5. ビルドと起動
 
 ```bash
-docker compose build narrator
-docker compose up -d aivis-engine
+make setup
+make launch
 ```
 
 EngineのSwagger UIはホストから次で確認できます。
@@ -117,7 +166,7 @@ http://127.0.0.1:10101/docs
 モデル配置後、話者名、スタイル名、`style_id`を確認します。
 
 ```bash
-docker compose --profile tools run --rm narrator --list-voices
+make voices
 ```
 
 出力例:
@@ -129,14 +178,14 @@ style_id=888753760    speaker=話者名    style=ノーマル
 利用可能なモデルが表示されない場合は、次を確認します。
 
 ```bash
-docker compose logs aivis-engine
+make logs
 find aivis-data/Models -maxdepth 1 -type f -name '*.aivmx' -ls
 ```
 
 モデル追加後に認識されない場合はEngineを再起動します。
 
 ```bash
-docker compose restart aivis-engine
+make restart
 ```
 
 ## 7. 発表者ノートだけを抽出する
@@ -144,16 +193,14 @@ docker compose restart aivis-engine
 TTSの前に、抽出結果をレビューすることを推奨します。
 
 ```bash
-docker compose --profile tools run --rm narrator \
-  /work/input/TechConnect講義資料_AUTSARAP開発_v0.2.pptx \
-  --extract-only
+make extract PPTX="sample/introduction_to_autosar.pptx"
 ```
 
 抽出結果:
 
 ```text
-output/notes/slide-001.txt
-output/notes/slide-002.txt
+output/introduction_to_autosar/notes/slide-001.txt
+output/introduction_to_autosar/notes/slide-002.txt
 ...
 ```
 
@@ -166,21 +213,21 @@ output/notes/slide-002.txt
 ### 8.1 最初に見つかったスタイルを使用する
 
 ```bash
-docker compose --profile tools run --rm narrator \
-  /work/input/TechConnect講義資料_AUTSARAP開発_v0.2.pptx
+make tts PPTX="sample/introduction_to_autosar.pptx"
 ```
 
 標準では次を生成します。
 
 ```text
 output/
-├── notes/
-├── slides/
-│   ├── slide-001.mp3
-│   ├── slide-002.mp3
-│   └── ...
-├── manifest.json
-└── lecture.mp3
+└── <PPTXファイル名（拡張子なし）>/
+    ├── notes/
+    ├── slides/
+    │   ├── slide-001.mp3
+    │   ├── slide-002.mp3
+    │   └── ...
+    ├── manifest.json
+    └── narration.mp3
 ```
 
 ### 8.2 スタイルIDを明示する
@@ -188,48 +235,37 @@ output/
 再現性のため、実運用では`--style-id`の指定を推奨します。
 
 ```bash
-docker compose --profile tools run --rm narrator \
-  /work/input/TechConnect講義資料_AUTSARAP開発_v0.2.pptx \
-  --style-id 888753760
+make tts PPTX="sample/introduction_to_autosar.pptx" \
+  STYLE_ID=888753760
 ```
 
 ### 8.3 話速・抑揚・スライド間隔を調整する
 
 ```bash
-docker compose --profile tools run --rm narrator \
-  /work/input/TechConnect講義資料_AUTSARAP開発_v0.2.pptx \
-  --style-id 888753760 \
-  --speed 0.95 \
-  --intonation 1.05 \
-  --slide-gap 1.0 \
-  --combined-name TechConnect_AUTOSAR_AP
+make tts PPTX="sample/introduction_to_autosar.pptx" \
+  STYLE_ID=888753760 \
+  TTS_ARGS="--speed 0.95 --intonation 1.05 --slide-gap 1.0"
 ```
 
 ### 8.4 一部のスライドだけを生成する
 
 ```bash
-docker compose --profile tools run --rm narrator \
-  /work/input/TechConnect講義資料_AUTSARAP開発_v0.2.pptx \
-  --style-id 888753760 \
-  --include-slides 1-5,8,10-12
+make tts PPTX="sample/introduction_to_autosar.pptx" \
+  STYLE_ID=888753760 TTS_ARGS="--include-slides 1-5,8,10-12"
 ```
 
 ### 8.5 WAVで出力する
 
 ```bash
-docker compose --profile tools run --rm narrator \
-  /work/input/TechConnect講義資料_AUTSARAP開発_v0.2.pptx \
-  --style-id 888753760 \
-  --format wav
+make tts PPTX="sample/introduction_to_autosar.pptx" \
+  STYLE_ID=888753760 TTS_ARGS="--format wav"
 ```
 
 ### 8.6 個別ファイルだけ生成する
 
 ```bash
-docker compose --profile tools run --rm narrator \
-  /work/input/TechConnect講義資料_AUTSARAP開発_v0.2.pptx \
-  --style-id 888753760 \
-  --no-combine
+make tts PPTX="sample/introduction_to_autosar.pptx" \
+  STYLE_ID=888753760 TTS_ARGS="--no-combine"
 ```
 
 ## 9. 主なオプション
@@ -255,7 +291,7 @@ docker compose --profile tools run --rm narrator \
 全オプション:
 
 ```bash
-docker compose --profile tools run --rm narrator --help
+make help
 ```
 
 ## 10. 処理仕様
@@ -325,7 +361,7 @@ AivisSpeech Engineが利用するONNX Runtimeと、GPU実行環境のCUDA/cuDNN�
 ## 12. 停止
 
 ```bash
-docker compose down
+make shutdown
 ```
 
 `aivis-data`はホストのバインドマウントなので、`down`後もモデルとキャッシュは残ります。

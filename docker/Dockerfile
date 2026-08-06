@@ -11,13 +11,14 @@ RUN apt-get update \
 
 WORKDIR /work
 
-COPY requirements.txt /tmp/requirements.txt
+COPY docker/app/requirements.txt /tmp/requirements.txt
 RUN python -m pip install \
         --no-cache-dir \
         --break-system-packages \
         -r /tmp/requirements.txt
 
-COPY app/generate_audio.py /opt/narrator/generate_audio.py
+COPY docker/app/generate_audio.py /opt/narrator/generate_audio.py
+COPY --chmod=755 docker/entrypoint /entrypoint
 
-ENTRYPOINT ["python", "/opt/narrator/generate_audio.py"]
+ENTRYPOINT ["/entrypoint"]
 CMD ["--help"]

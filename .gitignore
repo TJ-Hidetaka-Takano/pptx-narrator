@@ -1,0 +1,13 @@
+.DS_Store
+.env
+.home/
+
+# 音声生成の成果物
+*.mp3
+*.wav
+output/*
+!output/.gitkeep
+
+# AivisSpeech Engineが自動生成するランタイムデータ
+aivis-data/*
+!aivis-data/Models/.gitkeep
