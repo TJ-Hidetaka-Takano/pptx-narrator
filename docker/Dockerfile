@@ -9,6 +9,9 @@ RUN apt-get update \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
+COPY docker/corporate-ca-bundle.crt /usr/local/share/ca-certificates/corporate-ca-bundle.crt
+RUN update-ca-certificates
+
 WORKDIR /work
 
 COPY docker/app/requirements.txt /tmp/requirements.txt

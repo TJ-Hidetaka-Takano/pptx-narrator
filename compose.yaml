@@ -3,8 +3,20 @@ services:
     image: ghcr.io/aivis-project/aivisspeech-engine:cpu-latest
     ports:
       - "127.0.0.1:10101:10101"
+    environment:
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,aivis-engine}
+      no_proxy: ${no_proxy:-localhost,127.0.0.1,aivis-engine}
+      SSL_CERT_FILE: /tmp/corporate-ca-bundle.crt
+      REQUESTS_CA_BUNDLE: /tmp/corporate-ca-bundle.crt
+      HF_HUB_DISABLE_XET: "1"
     volumes:
       - ./aivis-data:/home/user/.local/share/AivisSpeech-Engine-Dev
+      - type: bind
+        source: ./docker/corporate-ca-bundle.crt
+        target: /tmp/corporate-ca-bundle.crt
+        read_only: true
     restart: unless-stopped
 
   pptx-narrator:
@@ -18,6 +30,10 @@ services:
     environment:
       AIVIS_ENGINE_URL: http://aivis-engine:10101
       HOME: ${PWD}/.home
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,aivis-engine}
+      no_proxy: ${no_proxy:-localhost,127.0.0.1,aivis-engine}
     volumes:
       - type: bind
         source: /etc/passwd

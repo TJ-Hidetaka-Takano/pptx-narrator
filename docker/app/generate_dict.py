@@ -11,6 +11,7 @@ import sys
 import uuid
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import requests
 import yaml
@@ -34,6 +35,15 @@ MORA_PATTERN = re.compile(
     r"[キシチニヒミリギジヂビピ][ェャュョ]|[シ]ィ|"
     r"[クツフヴグ]ァ|[ウクスツフヴグズ]ィ|[ウクツフヴグ][ェォ]|[フ]ュ|[ァ-ヴー]"
 )
+
+
+def build_engine_session(base_url: str) -> requests.Session:
+    """Avoid corporate proxies when talking to local/container-internal engine."""
+    session = requests.Session()
+    host = (urlparse(base_url).hostname or "").lower()
+    if host in {"aivis-engine", "localhost", "127.0.0.1", "::1"}:
+        session.trust_env = False
+    return session
 
 
 def parse_args() -> argparse.Namespace:
@@ -208,9 +218,12 @@ def read_previous_dictionary(output_path: Path) -> dict[str, Any]:
 
 
 def apply_dictionary(
-    dictionary: dict[str, dict[str, Any]], previous_dictionary: dict[str, Any], engine_url: str
+    dictionary: dict[str, dict[str, Any]],
+    previous_dictionary: dict[str, Any],
+    engine_url: str,
+    session: requests.Session,
 ) -> None:
-    response = requests.post(
+    response = session.post(
         f"{engine_url.rstrip('/')}/import_user_dict",
         params={"override": "true"},
         json=dictionary,
@@ -219,7 +232,7 @@ def apply_dictionary(
     response.raise_for_status()
     # 専用の生成ファイルに記録されたUUIDだけを削除するため、手動登録した語は消さない。
     for word_uuid in previous_dictionary.keys() - dictionary.keys():
-        response = requests.delete(
+        response = session.delete(
             f"{engine_url.rstrip('/')}/user_dict_word/{word_uuid}", timeout=30
         )
         if response.status_code == 404:
@@ -229,18 +242,19 @@ def apply_dictionary(
 
 def main() -> int:
     args = parse_args()
+    session = build_engine_session(args.engine_url)
     if args.apply_existing:
         if not args.output.is_file():
             raise ValueError(f"生成済みのユーザー辞書がありません: {args.output}")
         dictionary = read_previous_dictionary(args.output)
-        apply_dictionary(dictionary, {}, args.engine_url)
+        apply_dictionary(dictionary, {}, args.engine_url, session)
         print(f"AivisSpeech Engineへユーザー辞書を反映しました: {args.engine_url}")
         return 0
 
     dictionary = load_dictionary(args.dict_dir)
     previous_dictionary = read_previous_dictionary(args.output)
     if args.apply:
-        apply_dictionary(dictionary, previous_dictionary, args.engine_url)
+        apply_dictionary(dictionary, previous_dictionary, args.engine_url, session)
         print(f"AivisSpeech Engineへユーザー辞書を反映しました: {args.engine_url}")
     # API反映後に保存することで、失敗時も次回の削除差分を失わない。
     write_dictionary(dictionary, args.output)

@@ -24,6 +24,7 @@ NARRATOR_IMAGE_SOURCES := compose.yaml docker/Dockerfile docker/entrypoint \
 setup: $(DEPS)
 	@mkdir -p .home output aivis-data/Models
 	@echo '[make] setup: build docker images for pptx-narrator'
+	$(COMPOSE) pull aivis-engine
 	$(COMPOSE) build --no-cache pptx-narrator
 	@touch $(NARRATOR_IMAGE_STAMP)
 

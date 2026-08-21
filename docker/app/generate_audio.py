@@ -15,6 +15,7 @@ import wave
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import requests
 from pptx import Presentation
@@ -25,6 +26,15 @@ class VoiceSelection:
     style_id: int
     speaker_name: str
     style_name: str
+
+
+def build_engine_session(base_url: str) -> requests.Session:
+    """Avoid corporate proxies when talking to local/container-internal engine."""
+    session = requests.Session()
+    host = (urlparse(base_url).hostname or "").lower()
+    if host in {"aivis-engine", "localhost", "127.0.0.1", "::1"}:
+        session.trust_env = False
+    return session
 
 
 def parse_args() -> argparse.Namespace:
@@ -88,18 +98,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--wait-seconds",
         type=int,
-        default=180,
+        default=240,
         help="Engine起動待ちの最大秒数",
     )
     return parser.parse_args()
 
 
-def wait_for_engine(base_url: str, timeout: int) -> None:
+def wait_for_engine(base_url: str, timeout: int, session: requests.Session) -> None:
     deadline = time.monotonic() + timeout
     last_error = ""
     while time.monotonic() < deadline:
         try:
-            response = requests.get(f"{base_url.rstrip('/')}/version", timeout=5)
+            response = session.get(f"{base_url.rstrip('/')}/version", timeout=5)
             response.raise_for_status()
             return
         except requests.RequestException as exc:
@@ -108,8 +118,8 @@ def wait_for_engine(base_url: str, timeout: int) -> None:
     raise RuntimeError(f"AivisSpeech Engineへ接続できません: {last_error}")
 
 
-def fetch_speakers(base_url: str) -> list[dict[str, Any]]:
-    response = requests.get(f"{base_url.rstrip('/')}/speakers", timeout=30)
+def fetch_speakers(base_url: str, session: requests.Session) -> list[dict[str, Any]]:
+    response = session.get(f"{base_url.rstrip('/')}/speakers", timeout=30)
     response.raise_for_status()
     data = response.json()
     if not isinstance(data, list):
@@ -223,8 +233,9 @@ def make_audio_query(
     text: str,
     style_id: int,
     args: argparse.Namespace,
+    session: requests.Session,
 ) -> dict[str, Any]:
-    response = requests.post(
+    response = session.post(
         f"{base_url.rstrip('/')}/audio_query",
         params={"text": text, "speaker": style_id},
         timeout=120,
@@ -241,9 +252,13 @@ def make_audio_query(
 
 
 def synthesize(
-    base_url: str, query: dict[str, Any], style_id: int, output_wav: Path
+    base_url: str,
+    query: dict[str, Any],
+    style_id: int,
+    output_wav: Path,
+    session: requests.Session,
 ) -> None:
-    response = requests.post(
+    response = session.post(
         f"{base_url.rstrip('/')}/synthesis",
         params={"speaker": style_id},
         json=query,
@@ -341,10 +356,11 @@ def combine_wavs(
 def main() -> int:
     args = parse_args()
     base_url = args.engine_url.rstrip("/")
+    session = build_engine_session(base_url)
 
     if args.list_voices:
-        wait_for_engine(base_url, args.wait_seconds)
-        list_voices(fetch_speakers(base_url))
+        wait_for_engine(base_url, args.wait_seconds, session)
+        list_voices(fetch_speakers(base_url, session))
         return 0
 
     if args.pptx is None:
@@ -365,8 +381,8 @@ def main() -> int:
     if args.extract_only:
         return 0
 
-    wait_for_engine(base_url, args.wait_seconds)
-    voice = select_voice(fetch_speakers(base_url), args.style_id)
+    wait_for_engine(base_url, args.wait_seconds, session)
+    voice = select_voice(fetch_speakers(base_url, session), args.style_id)
     print(
         f"使用音声: {voice.speaker_name} / {voice.style_name} "
         f"(style_id={voice.style_id})"
@@ -384,8 +400,8 @@ def main() -> int:
         wav_path = work_dir / f"slide-{slide_number:03d}.wav"
         destination = audio_dir / f"slide-{slide_number:03d}.{args.format}"
         print(f"[{index}/{len(notes)}] スライド {slide_number} を音声化")
-        query = make_audio_query(base_url, text, voice.style_id, args)
-        synthesize(base_url, query, voice.style_id, wav_path)
+        query = make_audio_query(base_url, text, voice.style_id, args, session)
+        synthesize(base_url, query, voice.style_id, wav_path, session)
         convert_audio(wav_path, destination)
         wav_files.append(wav_path)
         manifest.append(
